@@ -2,16 +2,22 @@
   <div class="container">
     <div class="left">
       <form @submit.prevent="submitForm">
-        <label for="title">Tytuł:
+        <h2>Utwórz nowy katalog:</h2>
+        <label for="title">Nazwa:
           <input type="text" id="title" v-model="formData.Title" required>
         </label>
-        <button type="submit">Wyślij</button>
+        <br>
+        <button id="createButton" type="submit">Stwórz</button>
       </form>
     </div>
 
     <div class="right">
       <div v-if="fetchedData.length > 0">
-        <NestedList :items="fetchedData" :button-index="0" :value="sortDirection" />
+        <NestedList
+          :items="fetchedData"
+          :nestIndex="0"
+          :sortDirection="sortDirection"
+        />
       </div>
     </div>
   </div>
@@ -42,7 +48,13 @@ export default {
     fetchData() {
       axios.get('https://localhost:44313/api/item')
         .then((response) => {
-          this.fetchedData = response.data;
+          this.fetchedData = response.data.map((item) => ({
+            ...item,
+            showEditForm: false,
+            showAddForm: false,
+
+          }));
+
           console.log(this.fetchedData);
         })
         .catch((error) => {
@@ -64,6 +76,10 @@ export default {
           window.location.reload();
         })
         .catch((error) => {
+          if (error.response && error.response.data && error.response.data.length > 0) {
+            const [{ errorMessage }] = error.response.data;
+            alert(errorMessage);
+          }
           console.error(error);
         });
 
@@ -75,23 +91,38 @@ export default {
 </script>
 
 <style scoped>
+
+ul {
+  list-style-type: circle;
+}
+
 .container {
   display: flex;
   min-width: 70%;
   margin: 0 auto;
+  font-family: 'Roboto', sans-serif;
 }
 
-.left, .right {
-  flex: 1;
+.left {
+  flex: 0 0 20%;
   padding: 20px;
   justify-content: center;
 }
 
-.left {
-  background: red;
+.right {
+  flex: 0 0 80%;
+  padding: 20px;
+  justify-content: center;
 }
 
-.right {
-  background: yellow;
+#createButton {
+  margin-top: 10px;
+  padding: 5px;
 }
+
+button:hover
+{
+  cursor: pointer;
+}
+
 </style>

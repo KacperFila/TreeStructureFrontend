@@ -1,60 +1,76 @@
 <template>
-  <button class="mainSort" v-if="buttonIndex === 0 && !drag" @click="toggleSortDirection">
-    ASC/DESC
+  <button class="mainSort" v-if="nestIndex === 0" @click="toggleSortDirection">
+    Zmień kierunek sortowania
   </button>
 
   <div class="container">
-
-      <Draggable
-        v-model="localItems"
-        item-key="id"
-        class="myList"
-        tag="ul"
-        :options="draggableOptions"
-      >
-        <template #item="{ element }">
-          <li>
-            <div class="liTop">
-              {{ element.title }}
-              <form @submit.prevent="editItem(element.id)">
-                <label for="parentItemId">Parent Item Id:
-                  <input type="text" id="parentItemId" v-model="parentItemId" required>
-                </label>
-
-                <label for="title">Title:
-                  <input type="text" id="title" v-model="title" required>
-                </label>
-                <button type="submit">Wyślij</button>
-              </form>
-
-            </div>
-
-            <div class ="liBottom">
-              <button @click="deleteItem(element.id)">Delete catalog</button>
-
-              <form @submit.prevent="submitForm(element.id)">
-                <label :for="'formTitle_' + element.id">New element:
+    <Draggable v-model="localItems" item-key="id" class="itemElement" tag="ul">
+      <template #item="{ element }">
+        <div>
+          <div class="liContainer">
+            <div class="liLeft">
+              <p class = "liTitle">{{ element.title }}</p>
+              <form v-if="element.showAddForm" @submit.prevent="submitForm(element)">
+                <label :for="'formTitle_' + element.id">Podaj nazwę nowego folderu:
                   <input
                     :id="'formTitle_' + element.id"
                     type="text"
-                    v-model="formTitle"
+                    v-model="element.formTitle"
                     required
                   />
                 </label>
-                <button type="submit">Add</button>
+                <button type="submit">Zapisz</button>
               </form>
-
+              <form v-if="element.showEditForm" @submit.prevent="editItem(element)">
+                <label for="title">Podaj nowy tytuł:
+                  <br><input type="text" id="title" v-model="element.newTitle" required>
+                </label><br>
+                <button type="submit">Zmień nazwę</button>
+              </form>
+              <form v-if="element.showEditForm" @submit.prevent="moveItem(element)">
+                <label :for="'parentItemId_' + element.id">Przenieś do:
+                  <br><select :id="'parentItemId_' + element.id"
+                          v-model="element.newParentItemId"
+                          required @focus="loadDropdownItems(element.id)">
+                    <option value="">Nie przenoś</option>
+                    <option v-for="item in dropdownItems" :value="item.id" :key="item.id">
+                      {{ item.title }}
+                    </option>
+                  </select>
+                </label><br>
+                <button type="submit">Zapisz</button>
+              </form>
+            </div>
+            <div class="liRight">
+              <ul class="itemOptions">
+                <li>
+                  <button @click="toggleAddFormVisibility(element)">Dodaj</button>
+                </li>
+                <li>
+                  <button @click="toggleEditFormVisibility(element)">Edytuj</button>
+                </li>
+                <li>
+                  <button @click="deleteItem(element.id)">Usuń</button>
+                </li>
+                <li v-if="element.childItems.length > 0">
+                  <button @click="toggleChildItemsVisibility(element)">
+                    {{ element.showChildItems ? 'Ukryj' : 'Pokaż' }}
+                  </button>
+                </li>
+              </ul>
               <NestedList
                 class="NestedElement"
                 :items="element.childItems"
-                :button-index="buttonIndex + 1"
+                :nestIndex="nestIndex + 1"
                 v-model="localSortDirection"
+                v-if="element.showChildItems"
               />
             </div>
-          </li>
-        </template>
-      </Draggable>
-    </div>
+          </div>
+        </div>
+      </template>
+    </Draggable>
+  </div>
 </template>
 
 <script>
@@ -70,26 +86,21 @@ export default {
     items: {
       type: Array,
     },
-    buttonIndex: {
+    nestIndex: {
       type: Number,
       default: 0,
     },
-    value: {
+    sortDirection: {
       type: String,
       default: 'asc',
     },
   },
+
   data() {
     return {
       localItems: [],
-      drag: false,
-      draggableOptions: {
-        group: 'nested-list',
-        ghostClass: 'drag-ghost',
-        chosenClass: 'drag-chosen',
-        removeOnSpill: true,
-      },
-      localSortDirection: this.value,
+      localSortDirection: this.sortDirection,
+      dropdownItems: [],
     };
   },
   watch: {
@@ -98,9 +109,30 @@ export default {
     },
   },
   mounted() {
-    this.localItems = [...this.items];
+    this.localItems = this.items.map((item) => ({ ...item, showChildItems: true }));
   },
   methods: {
+    loadDropdownItems(id) {
+      axios.get(`https://localhost:44313/api/item/exclude/${id}`)
+        .then((response) => {
+          this.dropdownItems = response.data.map((item) => ({
+            ...item,
+            showChildItems: true,
+          }));
+        })
+        .catch((error) => {
+          if (error.response && error.response.status === 404) {
+            console.log('Nie znaleziono danych.');
+          }
+        });
+    },
+
+    toggleChildItemsVisibility(element) {
+      const updatedElement = { ...element };
+      updatedElement.showChildItems = !updatedElement.showChildItems;
+      this.localItems.splice(this.localItems.indexOf(element), 1, updatedElement);
+    },
+
     toggleSortDirection() {
       this.localSortDirection = this.localSortDirection === 'asc' ? 'desc' : 'asc';
       this.localItems.sort((a, b) => {
@@ -110,40 +142,73 @@ export default {
         return b.title.localeCompare(a.title);
       });
     },
-    submitForm(parentItemId) {
+    toggleAddFormVisibility(element) {
+      const updatedElement = { ...element };
+      updatedElement.showAddForm = !updatedElement.showAddForm;
+      updatedElement.formTitle = '';
+      this.localItems.splice(this.localItems.indexOf(element), 1, updatedElement);
+    },
+    toggleEditFormVisibility(element) {
+      const updatedElement = { ...element };
+      updatedElement.showEditForm = !updatedElement.showEditForm;
+      this.localItems.splice(this.localItems.indexOf(element), 1, updatedElement);
+    },
+
+    submitForm(element) {
       const data = {
-        ParentItemId: parentItemId,
-        Title: this.formTitle,
+        ParentItemId: element.id,
+        Title: element.formTitle,
       };
+
       axios
         .post('https://localhost:44313/api/item', data)
-        .then((response) => {
-          console.log(response.data);
-          // Obsługa odpowiedzi
+        .then(() => {
+          this.toggleAddFormVisibility(element);
+          window.location.reload();
         })
         .catch((error) => {
+          if (error.response && error.response.data && error.response.data.length > 0) {
+            const [{ errorMessage }] = error.response.data;
+            alert(errorMessage);
+          }
           console.error(error);
-          // Obsługa błędu
         });
-      window.location.reload();
-      this.formTitle = '';
     },
-    editItem(Id) {
+    editItem(element) {
       const data = {
-        ParentItemId: this.parentItemId,
-        Title: this.title,
+        Title: element.newTitle,
       };
-      console.log('Wartość zmiennej Id:', Id);
+      console.log(data);
       axios
-        .put(`https://localhost:44313/api/item/${Id}`, data)
+        .put(`https://localhost:44313/api/item/rename/${element.id}`, data)
         .then((response) => {
           console.log(response.data);
-          // Obsługa odpowiedzi
+          this.toggleEditFormVisibility(element);
           window.location.reload();
         })
         .catch((error) => {
           console.error(error);
-          // Obsługa błędu
+        });
+    },
+
+    moveItem(element) {
+      if (element.newParentItemId === '') {
+        return;
+      }
+
+      const data = {
+        ParentItemId: element.newParentItemId,
+      };
+      console.log(data);
+      axios
+        .put(`https://localhost:44313/api/item/move/${element.id}`, data)
+        .then((response) => {
+          console.log(response.data);
+          this.toggleEditFormVisibility(element);
+          window.location.reload();
+        })
+        .catch((error) => {
+          console.error(error);
         });
     },
     deleteItem(itemId) {
@@ -151,53 +216,67 @@ export default {
         .delete(`https://localhost:44313/api/item/${itemId}`)
         .then((response) => {
           console.log(response.data);
-          // Obsługa odpowiedzi
+          window.location.reload();
         })
         .catch((error) => {
           console.error(error);
-          // Obsługa błędu
         });
-      window.location.reload();
-      this.formTitle = '';
     },
   },
 };
 </script>
 
 <style scoped>
-ul {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-  width: fit-content;
+
+button
+{
+  font-family: 'Roboto', sans-serif;
+  padding: 5px;
+  margin-bottom: 5px;
 }
 
-li {
+button:hover
+{
+  cursor: pointer;
+}
+
+.liContainer {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  padding: 20px;
+  margin: 5px;
+  background: #e7e7d0;
+  border: 2px #284b55 solid;
+  border-radius: 10px;
 }
 
-.liTop, .liBottom {
-  width: 100%;
+.liLeft,
+.liRight {
+  flex: 1;
 }
 
-.liTop {
-  background-color: #f2f2f2;
-  padding: 10px;
-  border: black solid 1px;
-}
-
-.liBottom {
-  background-color: lightblue;
-  padding: 10px;
-  border: black solid 1px;
-  border-top:0;
+.liTitle
+{
+  font-size: 140%;
+  text-decoration: underline;
 }
 
 .container {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.itemOptions {
+  display: flex;
+  flex-direction: row;
+  margin: 0 auto;
+  justify-content: right;
+}
+
+.itemOptions li {
+  margin-right: 10px;
+  list-style-type: none;
 }
 
 </style>
